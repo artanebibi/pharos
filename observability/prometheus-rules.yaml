@@ -1,0 +1,45 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: pharos-failure-alerts
+  namespace: monitoring
+  labels:
+    release: kube-prometheus-stack
+spec:
+  groups:
+  - name: pharos.failure-modes
+    rules:
+    - alert: PodCrashLoopBackOff
+      expr: kube_pod_container_status_waiting_reason{namespace="workloads", reason="CrashLoopBackOff"} == 1
+      for: 1m
+      labels:
+        severity: critical
+        failure_mode: crashloop
+      annotations:
+        summary: "{{ $labels.pod }} is in CrashLoopBackOff"
+        description: "Container {{ $labels.container }} in pod {{ $labels.pod }} (namespace {{ $labels.namespace }}) is stuck restarting."
+
+    - alert: PodOOMKilled
+      expr: kube_pod_container_status_last_terminated_reason{namespace="workloads", reason="OOMKilled"} == 1
+      for: 1m
+      labels:
+        severity: critical
+        failure_mode: oom
+      annotations:
+        summary: "{{ $labels.pod }} was OOMKilled"
+        description: "Container {{ $labels.container }} in pod {{ $labels.pod }} (namespace {{ $labels.namespace }}) was terminated by the OOM killer."
+
+    - alert: PodCPUThrottlingHigh
+      expr: |
+        (
+          rate(container_cpu_cfs_throttled_periods_total{namespace="workloads"}[5m])
+          /
+          rate(container_cpu_cfs_periods_total{namespace="workloads"}[5m])
+        ) > 0.5
+      for: 2m
+      labels:
+        severity: warning
+        failure_mode: cpu-throttle
+      annotations:
+        summary: "{{ $labels.pod }} container {{ $labels.container }} is CPU throttled"
+        description: "More than 50% of CPU periods are throttled for {{ $labels.container }} in {{ $labels.pod }}."

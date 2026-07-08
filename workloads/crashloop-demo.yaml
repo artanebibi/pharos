@@ -1,0 +1,26 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: crashloop-demo
+  namespace: workloads
+  labels:
+    app: crashloop-demo
+    failure-mode: crashloop
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: crashloop-demo
+  template:
+    metadata:
+      labels:
+        app: crashloop-demo
+        failure-mode: crashloop
+    spec:
+      containers:
+      - name: crasher
+        image: busybox:1.36
+        command: ["sh", "-c", "echo 'Simulated crash: missing config' >&2; sleep 2; exit 1"]
+        resources:
+          requests: { cpu: 10m, memory: 16Mi }
+          limits: { cpu: 50m, memory: 32Mi }

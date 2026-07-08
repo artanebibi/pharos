@@ -1,0 +1,27 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: oom-demo
+  namespace: workloads
+  labels:
+    app: oom-demo
+    failure-mode: oom
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: oom-demo
+  template:
+    metadata:
+      labels:
+        app: oom-demo
+        failure-mode: oom
+    spec:
+      containers:
+      - name: memory-eater
+        image: polinux/stress
+        command: ["stress"]
+        args: ["--vm", "1", "--vm-bytes", "200M", "--vm-hang", "0"]
+        resources:
+          requests: { cpu: 10m, memory: 32Mi }
+          limits: { cpu: 100m, memory: 64Mi }

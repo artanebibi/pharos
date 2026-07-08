@@ -1,0 +1,27 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cpu-throttle-demo
+  namespace: workloads
+  labels:
+    app: cpu-throttle-demo
+    failure-mode: cpu-throttle
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cpu-throttle-demo
+  template:
+    metadata:
+      labels:
+        app: cpu-throttle-demo
+        failure-mode: cpu-throttle
+    spec:
+      containers:
+      - name: cpu-burner
+        image: polinux/stress
+        command: ["stress"]
+        args: ["--cpu", "2"]
+        resources:
+          requests: { cpu: 50m, memory: 32Mi }
+          limits: { cpu: 100m, memory: 64Mi }
