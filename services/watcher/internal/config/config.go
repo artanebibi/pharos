@@ -1,5 +1,3 @@
-// .env is loaded from the repo root (not services/watcher/), matching
-// rag-engine/config.py's convention.
 package config
 
 import (
@@ -7,30 +5,30 @@ import (
 	"path/filepath"
 	"runtime"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/joho/godotenv"
 )
 
 type Config struct {
-	PollInterval    time.Duration
-	DedupTTL        time.Duration
-	LogTailLines    int64
-	AlertManagerURL string
-	PrometheusURL   string
-	RAGEngineURL    string
-	WatcherLogPath  string
-	RepoRoot        string
+	PollInterval     time.Duration
+	DedupTTL         time.Duration
+	LogTailLines     int64
+	AlertManagerURL  string
+	PrometheusURL    string
+	RAGEngineURL     string
+	WatcherLogPath   string
+	RepoRoot         string
+	NamespaceFilters []string
 }
 
-// repoRoot walks up from this source file's compile-time location to find
-// the repository root (services/watcher/internal/config -> ... -> pharos).
+// repoRoot walks up from this source file's compile-time location to find the repo root
 func repoRoot() string {
 	_, file, _, ok := runtime.Caller(0)
 	if !ok {
 		return "."
 	}
-	// config.go -> config/ -> internal/ -> watcher/ -> services/ -> pharos/
 	dir := filepath.Dir(file)
 	for i := 0; i < 4; i++ {
 		dir = filepath.Dir(dir)
@@ -43,14 +41,15 @@ func Load() Config {
 	_ = godotenv.Load(filepath.Join(root, ".env"))
 
 	return Config{
-		PollInterval:    getEnvSeconds("WATCHER_POLL_INTERVAL_SEC", 15),
-		DedupTTL:        getEnvSeconds("DEDUP_TTL_SEC", 900),
-		LogTailLines:    getEnvInt64("LOG_TAIL_LINES", 200),
-		AlertManagerURL: getEnvStr("ALERTMANAGER_URL", "http://localhost:9093"),
-		PrometheusURL:   getEnvStr("PROMETHEUS_URL", "http://localhost:9090"),
-		RAGEngineURL:    getEnvStr("RAG_ENGINE_URL", "http://localhost:8081"),
-		WatcherLogPath:  getEnvStr("WATCHER_LOG_PATH", filepath.Join(root, "tests", "logs", "watcher_log.jsonl")),
-		RepoRoot:        root,
+		PollInterval:     getEnvSeconds("WATCHER_POLL_INTERVAL_SEC", 15),
+		DedupTTL:         getEnvSeconds("DEDUP_TTL_SEC", 900),
+		LogTailLines:     getEnvInt64("LOG_TAIL_LINES", 200),
+		AlertManagerURL:  getEnvStr("ALERTMANAGER_URL", "http://localhost:9093"),
+		PrometheusURL:    getEnvStr("PROMETHEUS_URL", "http://localhost:9090"),
+		RAGEngineURL:     getEnvStr("RAG_ENGINE_URL", "http://localhost:8080"),
+		WatcherLogPath:   getEnvStr("WATCHER_LOG_PATH", filepath.Join(root, "tests", "logs", "watcher_log.jsonl")),
+		RepoRoot:         root,
+		NamespaceFilters: strings.Fields(getEnvStr("WATCHER_NAMESPACE_FILTER", "workloads")),
 	}
 }
 

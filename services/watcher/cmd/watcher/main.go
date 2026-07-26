@@ -43,14 +43,15 @@ func main() {
 	}
 
 	loop := &watcher.Loop{
-		AM:            alertmanager.New(cfg.AlertManagerURL),
-		K8s:           clientset,
-		PrometheusURL: cfg.PrometheusURL,
-		Diag:          diagnose.New(cfg.RAGEngineURL),
-		Dedup:         dedup.New(time.Now),
-		DedupTTL:      cfg.DedupTTL,
-		LogTailLines:  cfg.LogTailLines,
-		LogEncoder:    json.NewEncoder(logFile),
+		AM:               alertmanager.New(cfg.AlertManagerURL),
+		K8s:              clientset,
+		PrometheusURL:    cfg.PrometheusURL,
+		Diag:             diagnose.New(cfg.RAGEngineURL),
+		Dedup:            dedup.New(time.Now),
+		DedupTTL:         cfg.DedupTTL,
+		LogTailLines:     cfg.LogTailLines,
+		LogEncoder:       json.NewEncoder(logFile),
+		NamespaceFilters: cfg.NamespaceFilters,
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)

@@ -29,3 +29,4 @@ class Diagnosis(BaseModel):
     kubectl_commands: list[str]
     sources_used: list[str]
     reasoning: str
+    incident_id: str | None = None

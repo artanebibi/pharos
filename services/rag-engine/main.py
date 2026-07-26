@@ -11,6 +11,8 @@ from pydantic import ValidationError
 
 from config import settings
 from embedder import build_embedder
+from incident_store import IncidentStore, StatusTransitionError
+from ingestion import ingest_incident_memory
 from prompts import SCHEMA_RETRY_INSTRUCTION, build_diagnosis_prompt
 from reasoner import build_reasoner
 from retriever import build_retriever
@@ -24,6 +26,7 @@ async def lifespan(_app: FastAPI):
     components["embedder"] = build_embedder(settings)
     components["retriever"] = build_retriever(settings)
     components["reasoner"] = build_reasoner(settings)
+    components["incident_store"] = IncidentStore()
     settings.diagnose_log_path.parent.mkdir(parents=True, exist_ok=True)
     print(
         f"[rag-engine] embedder={settings.embedder_backend} "
@@ -113,6 +116,7 @@ def diagnose(incident: IncidentContext) -> Diagnosis:
     embedder = components["embedder"]
     retriever = components["retriever"]
     reasoner = components["reasoner"]
+    incident_store = components["incident_store"]
 
     query = build_query_string(incident)
     chunks: list[RetrievedChunk] = retriever.query(
@@ -125,6 +129,7 @@ def diagnose(incident: IncidentContext) -> Diagnosis:
         diagnosis = escalate_out_of_distribution(
             max_similarity, settings.ood_floor_threshold, len(chunks)
         )
+        diagnosis.incident_id = incident_store.create(incident, diagnosis, max_similarity)
         log_record(incident, prompt=None, raw_response=None, diagnosis=diagnosis,
                    ood_escalated=True)
         return diagnosis
@@ -182,7 +187,74 @@ def diagnose(incident: IncidentContext) -> Diagnosis:
         prompt, raw_response = retry_prompt, retry_response
 
     diagnosis.retrieval_relevance_score = max_similarity
+    diagnosis.incident_id = incident_store.create(incident, diagnosis, max_similarity)
 
     log_record(incident, prompt=prompt, raw_response=raw_response, diagnosis=diagnosis,
                ood_escalated=False)
     return diagnosis
+
+
+def _compact_incident(record) -> dict:
+    return {
+        "id": record.id,
+        "created_at": record.created_at,
+        "namespace": record.namespace,
+        "pod_name": record.pod_name,
+        "root_cause": record.root_cause,
+        "retrieval_relevance_score": record.retrieval_relevance_score,
+        "status": record.status,
+    }
+
+
+@app.get("/incidents")
+def list_incidents(status: str = "PENDING_REVIEW") -> list[dict]:
+    incident_store = components["incident_store"]
+    return [_compact_incident(r) for r in incident_store.list_by_status(status)]
+
+
+@app.post("/incidents/{incident_id}/approve")
+def approve_incident(incident_id: str) -> dict:
+    incident_store = components["incident_store"]
+
+    record = incident_store.get(incident_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="incident not found")
+
+    try:
+        incident_store.update_status(
+            incident_id, "APPROVED", transition_valid_from={"PENDING_REVIEW"}
+        )
+    except StatusTransitionError as err:
+        raise HTTPException(status_code=409, detail=str(err)) from err
+
+    return _compact_incident(incident_store.get(incident_id))
+
+
+@app.post("/incidents/{incident_id}/memorize")
+def memorize_incident(incident_id: str) -> dict:
+    incident_store = components["incident_store"]
+    embedder = components["embedder"]
+    retriever = components["retriever"]
+
+    record = incident_store.get(incident_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="incident not found")
+
+    if record.status == "MEMORIZED":
+        return {"id": incident_id, "already_memorized": True, "corpus_size": retriever.count()}
+
+    try:
+        incident_store.update_status(
+            incident_id, "MEMORIZED", transition_valid_from={"APPROVED"}
+        )
+    except StatusTransitionError as err:
+        raise HTTPException(status_code=409, detail=str(err)) from err
+
+    ingest_incident_memory(
+        record.context.model_dump(),
+        record.diagnosis.model_dump(),
+        embedder=embedder,
+        retriever=retriever,
+    )
+
+    return {"id": incident_id, "corpus_size": retriever.count()}

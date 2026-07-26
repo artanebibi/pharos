@@ -1,7 +1,5 @@
 package model
 
-// JSON tags must match rag-engine/schemas.py's IncidentContext field-for-field;
-// the RAG engine rejects unknown fields.
 type IncidentContext struct {
 	PodName   string             `json:"pod_name"`
 	Namespace string             `json:"namespace"`
@@ -18,4 +16,5 @@ type Diagnosis struct {
 	KubectlCommands         []string `json:"kubectl_commands"`
 	SourcesUsed             []string `json:"sources_used"`
 	Reasoning               string   `json:"reasoning"`
+	IncidentID              string   `json:"incident_id,omitempty"`
 }

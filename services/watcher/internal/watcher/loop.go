@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log"
+	"slices"
 	"time"
 
 	"k8s.io/client-go/kubernetes"
@@ -16,7 +17,6 @@ import (
 )
 
 // One line of tests/logs/watcher_log.jsonl — do not drop fields, this is
-// the Phase 1f validation dataset's raw material.
 type LogEntry struct {
 	Timestamp      string            `json:"timestamp"`
 	Fingerprint    string            `json:"fingerprint"`
@@ -24,19 +24,22 @@ type LogEntry struct {
 	Evidence       any               `json:"evidence"`
 	DiagnoseStatus int               `json:"diagnose_status,omitempty"`
 	Diagnosis      any               `json:"diagnosis,omitempty"`
+	IncidentID     *string           `json:"incident_id"`
 	Error          string            `json:"error,omitempty"`
 	PodVanished    bool              `json:"pod_vanished,omitempty"`
+	Reason         string            `json:"reason,omitempty"`
 }
 
 type Loop struct {
-	AM            *alertmanager.Client
-	K8s           kubernetes.Interface
-	PrometheusURL string
-	Diag          *diagnose.Client
-	Dedup         *dedup.Tracker
-	DedupTTL      time.Duration
-	LogTailLines  int64
-	LogEncoder    *json.Encoder
+	AM               *alertmanager.Client
+	K8s              kubernetes.Interface
+	PrometheusURL    string
+	Diag             *diagnose.Client
+	Dedup            *dedup.Tracker
+	DedupTTL         time.Duration
+	LogTailLines     int64
+	LogEncoder       *json.Encoder
+	NamespaceFilters []string
 }
 
 func (l *Loop) RunOnce(ctx context.Context) error {
@@ -70,6 +73,13 @@ func (l *Loop) processAlert(ctx context.Context, alert alertmanager.Alert) {
 
 	namespace := alert.Labels["namespace"]
 	pod := alert.Labels["pod"]
+
+	if len(l.NamespaceFilters) > 0 && !slices.Contains(l.NamespaceFilters, namespace) {
+		entry.Reason = "namespace_filter"
+		l.writeLog(entry)
+		l.Dedup.MarkSeen(alert.Fingerprint)
+		return
+	}
 
 	// Cluster-wide alerts (Watchdog, TargetDown) have no namespace/pod;
 	// mark seen so they don't spam the log every poll cycle forever.
@@ -107,9 +117,18 @@ func (l *Loop) processAlert(ctx context.Context, alert alertmanager.Alert) {
 	}
 
 	entry.Diagnosis = result.Diagnosis
+	entry.IncidentID = strPtrOrNil(result.Diagnosis.IncidentID)
 	l.writeLog(entry)
-	log.Printf("diagnosis fingerprint=%s root_cause=%q", alert.Fingerprint, result.Diagnosis.RootCause)
+	log.Printf("diagnosis fingerprint=%s root_cause=%q incident_id=%s",
+		alert.Fingerprint, result.Diagnosis.RootCause, result.Diagnosis.IncidentID)
 	l.Dedup.MarkSeen(alert.Fingerprint)
+}
+
+func strPtrOrNil(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
 }
 
 func (l *Loop) writeLog(entry LogEntry) {
