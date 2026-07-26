@@ -71,12 +71,14 @@ def log_record(
     diagnosis: Diagnosis | None,
     ood_escalated: bool,
     schema_failure: bool = False,
+    generation_failure: str | None = None,
 ) -> None:
     record = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "incident_context": incident.model_dump(),
         "ood_escalated": ood_escalated,
         "schema_failure": schema_failure,
+        "generation_failure": generation_failure,
         "prompt": prompt,
         "raw_response": raw_response,
         "diagnosis": diagnosis.model_dump() if diagnosis else None,
@@ -134,12 +136,29 @@ def diagnose(incident: IncidentContext) -> Diagnosis:
         max_log_chars=settings.max_log_chars,
     )
 
-    raw_response = reasoner.generate(prompt)
+    try:
+        raw_response = reasoner.generate(prompt)
+    except Exception as err:
+        log_record(incident, prompt=prompt, raw_response=None, diagnosis=None,
+                   ood_escalated=False, generation_failure=str(err))
+        raise HTTPException(
+            status_code=502,
+            detail={"error": "LLM generation failed", "reason": str(err)},
+        ) from err
+
     try:
         diagnosis = parse_diagnosis(raw_response)
     except (json.JSONDecodeError, ValidationError) as first_error:
         retry_prompt = prompt + SCHEMA_RETRY_INSTRUCTION
-        retry_response = reasoner.generate(retry_prompt)
+        try:
+            retry_response = reasoner.generate(retry_prompt)
+        except Exception as err:
+            log_record(incident, prompt=retry_prompt, raw_response=None, diagnosis=None,
+                       ood_escalated=False, generation_failure=str(err))
+            raise HTTPException(
+                status_code=502,
+                detail={"error": "LLM generation failed on retry", "reason": str(err)},
+            ) from err
         try:
             diagnosis = parse_diagnosis(retry_response)
         except (json.JSONDecodeError, ValidationError) as second_error:
