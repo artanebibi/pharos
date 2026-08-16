@@ -81,7 +81,8 @@ def test_low_similarity_escalates_without_calling_the_reasoner(monkeypatch, isol
     assert diagnosis.kubectl_commands == []
     assert diagnosis.sources_used == []
     assert diagnosis.retrieval_relevance_score == pytest.approx(0.11)
-    assert "0.11" in diagnosis.reasoning and "0.3" in diagnosis.reasoning
+    assert "0.11" in diagnosis.reasoning
+    assert f"{main.settings.ood_floor_threshold:.3f}" in diagnosis.reasoning
 
 
 def test_ood_escalation_is_logged_with_null_prompt_and_response(monkeypatch, isolated_log):

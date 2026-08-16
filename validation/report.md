@@ -1,6 +1,6 @@
 # Pharos - Phase 1f Validation Report
 
-Generated 2026-08-16 07:18 UTC by `validation/harness/metrics.py`. Regenerate with `python validation/harness/metrics.py`.
+Generated 2026-08-16 15:06 UTC by `validation/harness/metrics.py`. Regenerate with `python validation/harness/metrics.py`.
 
 Local stack, $0. Two conditions differing in exactly one thing: `rag_on` runs the full retrieval pipeline, `rag_off` runs the same pipeline with a no-op retriever. Same dataset, same model, same temperature, same prompt template minus the retrieved chunks.
 
