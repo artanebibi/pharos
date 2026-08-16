@@ -7,6 +7,9 @@ from schemas import RetrievedChunk
 
 
 class Retriever(ABC):
+    backend_name: str = "unknown"
+    performs_retrieval: bool = True
+
     @abstractmethod
     def query(self, query_embedding: list[float], top_k: int = 5) -> list[RetrievedChunk]:
         ...
@@ -17,8 +20,31 @@ class Retriever(ABC):
     ) -> None:
         ...
 
+    @abstractmethod
+    def count(self) -> int:
+        ...
+
+
+class NoRetriever(Retriever):
+
+    backend_name = "none"
+    performs_retrieval = False
+
+    def query(self, query_embedding: list[float], top_k: int = 5) -> list[RetrievedChunk]:
+        return []
+
+    def upsert(
+        self, chunk_id: str, embedding: list[float], document: str, metadata: dict
+    ) -> None:
+        return None
+
+    def count(self) -> int:
+        return 0
+
 
 class ChromaRetriever(Retriever):
+    backend_name = "chroma_local"
+
     def __init__(self, host: str, port: int, collection_name: str) -> None:
         import chromadb
 
@@ -73,6 +99,9 @@ def build_retriever(settings: Settings) -> Retriever:
             port=settings.chroma_port,
             collection_name=settings.collection_name,
         )
+    if settings.retriever_backend == "none":
+        return NoRetriever()
     raise ValueError(
-        f"Unknown RETRIEVER_BACKEND={settings.retriever_backend!r} (expected 'chroma_local')"
+        f"Unknown RETRIEVER_BACKEND={settings.retriever_backend!r} "
+        f"(expected 'chroma_local' or 'none')"
     )

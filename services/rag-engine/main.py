@@ -42,7 +42,18 @@ app = FastAPI(title="rag-engine", version="0.1.0", lifespan=lifespan)
 
 @app.get("/health")
 def health() -> dict:
-    return {"status": "ok", "service": "rag-engine"}
+    retriever = components.get("retriever")
+    try:
+        corpus_size = retriever.count() if retriever else None
+    except Exception:
+        corpus_size = None
+
+    return {
+        "status": "ok",
+        "service": "rag-engine",
+        "retriever_backend": getattr(retriever, "backend_name", None),
+        "corpus_size": corpus_size,
+    }
 
 QUERY_LOG_CHARS = 1000
 
@@ -75,6 +86,9 @@ def log_record(
     ood_escalated: bool,
     schema_failure: bool = False,
     generation_failure: str | None = None,
+    retrieved_chunk_ids: list[str] | None = None,
+    hallucinated_citations: list[str] | None = None,
+    citation_validity_rate: float | None = None,
 ) -> None:
     record = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -82,6 +96,9 @@ def log_record(
         "ood_escalated": ood_escalated,
         "schema_failure": schema_failure,
         "generation_failure": generation_failure,
+        "retrieved_chunk_ids": retrieved_chunk_ids or [],
+        "hallucinated_citations": hallucinated_citations or [],
+        "citation_validity_rate": citation_validity_rate,
         "prompt": prompt,
         "raw_response": raw_response,
         "diagnosis": diagnosis.model_dump() if diagnosis else None,
@@ -111,6 +128,20 @@ def escalate_out_of_distribution(
     )
 
 
+def strip_hallucinated_citations(
+    diagnosis: Diagnosis, chunks: list[RetrievedChunk]
+) -> tuple[list[str], float | None]:
+    valid_ids = {chunk.chunk_id for chunk in chunks}
+    cited = list(diagnosis.sources_used)
+
+    kept = [citation for citation in cited if citation in valid_ids]
+    hallucinated = [citation for citation in cited if citation not in valid_ids]
+
+    diagnosis.sources_used = kept
+    rate = (len(kept) / len(cited)) if cited else None
+    return hallucinated, rate
+
+
 @app.post("/diagnose", response_model=Diagnosis)
 def diagnose(incident: IncidentContext) -> Diagnosis:
     embedder = components["embedder"]
@@ -124,14 +155,16 @@ def diagnose(incident: IncidentContext) -> Diagnosis:
     )
 
     max_similarity = max((c.similarity for c in chunks), default=0.0)
+    chunk_ids = [c.chunk_id for c in chunks]
+    floor_applies = getattr(retriever, "performs_retrieval", True)
 
-    if max_similarity < settings.ood_floor_threshold:
+    if floor_applies and max_similarity < settings.ood_floor_threshold:
         diagnosis = escalate_out_of_distribution(
             max_similarity, settings.ood_floor_threshold, len(chunks)
         )
         diagnosis.incident_id = incident_store.create(incident, diagnosis, max_similarity)
         log_record(incident, prompt=None, raw_response=None, diagnosis=diagnosis,
-                   ood_escalated=True)
+                   ood_escalated=True, retrieved_chunk_ids=chunk_ids)
         return diagnosis
 
     prompt = build_diagnosis_prompt(
@@ -145,7 +178,8 @@ def diagnose(incident: IncidentContext) -> Diagnosis:
         raw_response = reasoner.generate(prompt)
     except Exception as err:
         log_record(incident, prompt=prompt, raw_response=None, diagnosis=None,
-                   ood_escalated=False, generation_failure=str(err))
+                   ood_escalated=False, generation_failure=str(err),
+                   retrieved_chunk_ids=chunk_ids)
         raise HTTPException(
             status_code=502,
             detail={"error": "LLM generation failed", "reason": str(err)},
@@ -159,7 +193,8 @@ def diagnose(incident: IncidentContext) -> Diagnosis:
             retry_response = reasoner.generate(retry_prompt)
         except Exception as err:
             log_record(incident, prompt=retry_prompt, raw_response=None, diagnosis=None,
-                       ood_escalated=False, generation_failure=str(err))
+                       ood_escalated=False, generation_failure=str(err),
+                       retrieved_chunk_ids=chunk_ids)
             raise HTTPException(
                 status_code=502,
                 detail={"error": "LLM generation failed on retry", "reason": str(err)},
@@ -174,6 +209,7 @@ def diagnose(incident: IncidentContext) -> Diagnosis:
                 diagnosis=None,
                 ood_escalated=False,
                 schema_failure=True,
+                retrieved_chunk_ids=chunk_ids,
             )
             raise HTTPException(
                 status_code=500,
@@ -187,10 +223,14 @@ def diagnose(incident: IncidentContext) -> Diagnosis:
         prompt, raw_response = retry_prompt, retry_response
 
     diagnosis.retrieval_relevance_score = max_similarity
+    hallucinated, citation_validity_rate = strip_hallucinated_citations(diagnosis, chunks)
+
     diagnosis.incident_id = incident_store.create(incident, diagnosis, max_similarity)
 
     log_record(incident, prompt=prompt, raw_response=raw_response, diagnosis=diagnosis,
-               ood_escalated=False)
+               ood_escalated=False, retrieved_chunk_ids=chunk_ids,
+               hallucinated_citations=hallucinated,
+               citation_validity_rate=citation_validity_rate)
     return diagnosis
 
 

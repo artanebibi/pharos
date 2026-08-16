@@ -1,0 +1,115 @@
+{
+  "generated_at": "2026-08-16T07:11:51.519816+00:00",
+  "tag": "m64165",
+  "runs_requested": 5,
+  "runs_passed": 5,
+  "runs": [
+    {
+      "run": 1,
+      "passed": true,
+      "source_incident": "inc-crashloop-001",
+      "failure_type": "crashloop",
+      "pod_name": "auth-gateway-b033a4332c-m641651",
+      "chunk_id": "incident::checkout/auth-gateway-b033a4332c-m641651",
+      "first_score": 0.55269736,
+      "second_score": 0.88170117,
+      "cited_own_memory": true,
+      "retrieved_own_memory": true,
+      "cited_other_memories": [],
+      "corpus_before": 12,
+      "corpus_after": 13,
+      "sources_used": [
+        "incident::checkout/auth-gateway-b033a4332c-m641651",
+        "crashloop-backoff.md::Symptom",
+        "crashloop-backoff.md::Diagnosis Steps",
+        "crashloop-backoff.md::Remediation"
+      ],
+      "note": ""
+    },
+    {
+      "run": 2,
+      "passed": true,
+      "source_incident": "inc-crashloop-004",
+      "failure_type": "crashloop",
+      "pod_name": "mail-relay-ae8ecf575b-m641652",
+      "chunk_id": "incident::logistics/mail-relay-ae8ecf575b-m641652",
+      "first_score": 0.59131706,
+      "second_score": 0.877771586,
+      "cited_own_memory": true,
+      "retrieved_own_memory": true,
+      "cited_other_memories": [],
+      "corpus_before": 13,
+      "corpus_after": 14,
+      "sources_used": [
+        "incident::logistics/mail-relay-ae8ecf575b-m641652",
+        "crashloop-backoff.md::Symptom"
+      ],
+      "note": ""
+    },
+    {
+      "run": 3,
+      "passed": true,
+      "source_incident": "inc-oom-002",
+      "failure_type": "oom",
+      "pod_name": "token-issuer-840b3d4ca6-m641653",
+      "chunk_id": "incident::checkout/token-issuer-840b3d4ca6-m641653",
+      "first_score": 0.6522978500000001,
+      "second_score": 0.8552624,
+      "cited_own_memory": true,
+      "retrieved_own_memory": true,
+      "cited_other_memories": [],
+      "corpus_before": 14,
+      "corpus_after": 15,
+      "sources_used": [
+        "incident::checkout/token-issuer-840b3d4ca6-m641653",
+        "crashloop-backoff.md::Symptom",
+        "oom-kill.md::Remediation"
+      ],
+      "note": ""
+    },
+    {
+      "run": 4,
+      "passed": true,
+      "source_incident": "inc-oom-005",
+      "failure_type": "oom",
+      "pod_name": "ledger-worker-22dcc5e595-m641654",
+      "chunk_id": "incident::workloads/ledger-worker-22dcc5e595-m641654",
+      "first_score": 0.54965883,
+      "second_score": 0.92399871,
+      "cited_own_memory": true,
+      "retrieved_own_memory": true,
+      "cited_other_memories": [],
+      "corpus_before": 15,
+      "corpus_after": 16,
+      "sources_used": [
+        "incident::workloads/ledger-worker-22dcc5e595-m641654",
+        "oom-kill.md::Remediation",
+        "oom-kill.md::Diagnosis Steps",
+        "oom-kill.md::Root Causes"
+      ],
+      "note": ""
+    },
+    {
+      "run": 5,
+      "passed": true,
+      "source_incident": "inc-cpu-throttle-003",
+      "failure_type": "cpu_throttle",
+      "pod_name": "feed-aggregator-8eb17610cd-m641655",
+      "chunk_id": "incident::checkout/feed-aggregator-8eb17610cd-m641655",
+      "first_score": 0.52842155,
+      "second_score": 0.73548013,
+      "cited_own_memory": true,
+      "retrieved_own_memory": true,
+      "cited_other_memories": [],
+      "corpus_before": 16,
+      "corpus_after": 17,
+      "sources_used": [
+        "incident::checkout/feed-aggregator-8eb17610cd-m641655",
+        "cpu-throttle.md::Symptom",
+        "cpu-throttle.md::Diagnosis Steps",
+        "cpu-throttle.md::Remediation"
+      ],
+      "note": ""
+    }
+  ]
+}

@@ -17,6 +17,10 @@ services/watcher/watcher
 
 local/data/
 
+validation/results/**/*.jsonl
+validation/results/**/*.png
+validation/results/**/relevance_vs_correctness.csv
+
 *.tfstate
 *.tfstate.*
 *.tfvars
