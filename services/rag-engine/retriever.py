@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from urllib.parse import quote
 
 from config import Settings
 from schemas import RetrievedChunk
@@ -91,6 +92,74 @@ class ChromaRetriever(Retriever):
     def count(self) -> int:
         return self._collection.count()
 
+DISTANCE_FIELD = "vector_distance"
+RESERVED_FIELDS = frozenset({"id", "embedding", "document", DISTANCE_FIELD})
+
+
+def firestore_document_id(chunk_id: str) -> str:
+    return quote(chunk_id, safe=":.-_=+")
+
+
+class FirestoreRetriever(Retriever):
+    backend_name = "firestore"
+
+    def __init__(
+        self,
+        project: str | None = None,
+        database: str = "(default)",
+        collection_name: str = "pharos_corpus",
+    ) -> None:
+        from google.cloud import firestore
+
+        self.collection_name = collection_name
+        self._client = firestore.Client(project=project, database=database)
+        self._collection = self._client.collection(collection_name)
+
+    def query(self, query_embedding: list[float], top_k: int = 5) -> list[RetrievedChunk]:
+        from google.cloud.firestore_v1.base_vector_query import DistanceMeasure
+        from google.cloud.firestore_v1.vector import Vector
+
+        snapshots = self._collection.find_nearest(
+            vector_field="embedding",
+            query_vector=Vector(query_embedding),
+            distance_measure=DistanceMeasure.COSINE,
+            limit=top_k,
+            distance_result_field=DISTANCE_FIELD,
+        ).get()
+
+        chunks: list[RetrievedChunk] = []
+        for snapshot in snapshots:
+            data = snapshot.to_dict() or {}
+            distance = float(data.get(DISTANCE_FIELD, 1.0))
+            chunks.append(
+                RetrievedChunk(
+                    chunk_id=data.get("id") or snapshot.id,
+                    document=data.get("document", ""),
+                    metadata={k: v for k, v in data.items() if k not in RESERVED_FIELDS},
+                    similarity=1.0 - distance,
+                )
+            )
+        return chunks
+
+    def upsert(
+        self, chunk_id: str, embedding: list[float], document: str, metadata: dict
+    ) -> None:
+        from google.cloud.firestore_v1.vector import Vector
+
+        payload = dict(metadata or {})
+        payload.update(
+            {
+                "id": chunk_id,
+                "document": document,
+                "embedding": Vector(embedding),
+            }
+        )
+        self._collection.document(firestore_document_id(chunk_id)).set(payload, merge=True)
+
+    def count(self) -> int:
+        result = self._collection.count().get()
+        return int(result[0][0].value)
+
 
 def build_retriever(settings: Settings) -> Retriever:
     if settings.retriever_backend == "chroma_local":
@@ -99,9 +168,15 @@ def build_retriever(settings: Settings) -> Retriever:
             port=settings.chroma_port,
             collection_name=settings.collection_name,
         )
+    if settings.retriever_backend == "firestore":
+        return FirestoreRetriever(
+            project=settings.gcp_project,
+            database=settings.firestore_database,
+            collection_name=settings.firestore_collection,
+        )
     if settings.retriever_backend == "none":
         return NoRetriever()
     raise ValueError(
         f"Unknown RETRIEVER_BACKEND={settings.retriever_backend!r} "
-        f"(expected 'chroma_local' or 'none')"
+        f"(expected 'chroma_local', 'firestore' or 'none')"
     )

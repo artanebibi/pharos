@@ -7,11 +7,13 @@ from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
+from auth import install_bearer_auth
 from config import settings
 from embedder import build_embedder
-from incident_store import IncidentStore, StatusTransitionError
+from incident_store import NoopIncidentStore, StatusTransitionError, build_incident_store
 from ingestion import ingest_incident_memory
 from prompts import SCHEMA_RETRY_INSTRUCTION, build_diagnosis_prompt
 from reasoner import build_reasoner
@@ -26,11 +28,12 @@ async def lifespan(_app: FastAPI):
     components["embedder"] = build_embedder(settings)
     components["retriever"] = build_retriever(settings)
     components["reasoner"] = build_reasoner(settings)
-    components["incident_store"] = IncidentStore()
+    components["incident_store"] = build_incident_store(settings.incident_store_backend)
     settings.diagnose_log_path.parent.mkdir(parents=True, exist_ok=True)
     print(
         f"[rag-engine] embedder={settings.embedder_backend} "
         f"retriever={settings.retriever_backend} reasoner={settings.reasoner_backend} "
+        f"incident_store={settings.incident_store_backend} "
         f"ood_floor={settings.ood_floor_threshold}"
     )
     yield
@@ -39,6 +42,18 @@ async def lifespan(_app: FastAPI):
 
 app = FastAPI(title="rag-engine", version="0.1.0", lifespan=lifespan)
 
+install_bearer_auth(app)
+
+NOT_IMPLEMENTED_IN_CLOUD = {
+    "error": "not_implemented_in_cloud_mode",
+    "reason": "incident store is noop; Phase 3 provides a persistent backend",
+}
+
+
+def _noop_store_response() -> JSONResponse | None:
+    if isinstance(components.get("incident_store"), NoopIncidentStore):
+        return JSONResponse(status_code=501, content=NOT_IMPLEMENTED_IN_CLOUD)
+    return None
 
 @app.get("/health")
 def health() -> dict:
@@ -52,6 +67,10 @@ def health() -> dict:
         "status": "ok",
         "service": "rag-engine",
         "retriever_backend": getattr(retriever, "backend_name", None),
+        "embedder_backend": settings.embedder_backend,
+        "incident_store_backend": getattr(
+            components.get("incident_store"), "backend_name", None
+        ),
         "corpus_size": corpus_size,
     }
 
@@ -247,13 +266,17 @@ def _compact_incident(record) -> dict:
 
 
 @app.get("/incidents")
-def list_incidents(status: str = "PENDING_REVIEW") -> list[dict]:
+def list_incidents(status: str = "PENDING_REVIEW"):
+    if (unavailable := _noop_store_response()) is not None:
+        return unavailable
     incident_store = components["incident_store"]
     return [_compact_incident(r) for r in incident_store.list_by_status(status)]
 
 
 @app.post("/incidents/{incident_id}/approve")
-def approve_incident(incident_id: str) -> dict:
+def approve_incident(incident_id: str):
+    if (unavailable := _noop_store_response()) is not None:
+        return unavailable
     incident_store = components["incident_store"]
 
     record = incident_store.get(incident_id)
@@ -271,7 +294,9 @@ def approve_incident(incident_id: str) -> dict:
 
 
 @app.post("/incidents/{incident_id}/memorize")
-def memorize_incident(incident_id: str) -> dict:
+def memorize_incident(incident_id: str):
+    if (unavailable := _noop_store_response()) is not None:
+        return unavailable
     incident_store = components["incident_store"]
     embedder = components["embedder"]
     retriever = components["retriever"]

@@ -34,6 +34,8 @@ class IncidentRecord:
 
 
 class IncidentStore:
+    backend_name = "sqlite"
+
     def __init__(self, db_path: str | Path | None = None) -> None:
         if db_path is not None:
             self.db_path = Path(db_path)
@@ -132,6 +134,35 @@ class IncidentStore:
                 (status,),
             ).fetchall()
         return [_row_to_record(row) for row in rows]
+
+
+class NoopIncidentStore:
+
+    backend_name = "noop"
+
+    def create(self, context: IncidentContext, diagnosis: Diagnosis, score: float) -> str:
+        return uuid.uuid4().hex
+
+    def get(self, incident_id: str) -> IncidentRecord | None:
+        raise NotImplementedError("incident store is noop; Phase 3 provides a persistent backend")
+
+    def update_status(
+        self, incident_id: str, new_status: str, transition_valid_from: set[str]
+    ) -> None:
+        raise NotImplementedError("incident store is noop; Phase 3 provides a persistent backend")
+
+    def list_by_status(self, status: str) -> list[IncidentRecord]:
+        raise NotImplementedError("incident store is noop; Phase 3 provides a persistent backend")
+
+
+def build_incident_store(backend: str = "sqlite"):
+    if backend == "sqlite":
+        return IncidentStore()
+    if backend == "noop":
+        return NoopIncidentStore()
+    raise ValueError(
+        f"Unknown INCIDENT_STORE_BACKEND={backend!r} (expected 'sqlite' or 'noop')"
+    )
 
 
 def _row_to_record(row: sqlite3.Row) -> IncidentRecord:
